@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VR Concert Live</title>
+    <!-- Updated Firebase script links -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #121212;
+            color: white;
+            text-align: center;
+            padding: 20px;
+            margin: 0;
+            line-height: 1.6;
+        }
+        #video-container {
+            max-width: 800px;
+            margin: 20px auto;
+        }
+        iframe {
+            width: 100%;
+            height: 450px;
+            border-radius: 10px;
+            border: none;
+        }
+        #chat-container {
+            max-width: 800px;
+            margin: 20px auto;
+            background: #222;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: left;
+            height: 300px;
+            overflow-y: auto;
+        }
+        #chat-box {
+            height: 250px;
+            overflow-y: auto;
+        }
+        #chat-box p {
+            margin: 8px 0;
+            word-wrap: break-word;
+        }
+        #chat-input {
+            width: calc(100% - 100px);
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border: 1px solid #444;
+            background-color: #333;
+            color: white;
+        }
+        #send-button {
+            padding: 10px 20px;
+            background-color: #ff4d4d;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        #send-button:hover {
+            background-color: #ff1a1a;
+        }
+        #reactions {
+            margin-top: 20px;
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+        }
+        .reaction-button {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 10px;
+            background-color: #333;
+            border: none;
+            border-radius: 5px;
+            color: white;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        .reaction-button:hover {
+            background-color: #444;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎶 VR Concert & Cultural Event 🎭</h1>
+    
+    <!-- Video Stream -->
+    <div id="video-container">
+        <iframe id="live-stream" src="https://www.youtube.com/embed/hEdzv7D4CbQ" allowfullscreen aria-label="Live Concert Stream"></iframe>
+    </div>
+
+    <!-- Chat Section -->
+    <h2>💬 Live Chat</h2>
+    <div id="chat-container">
+        <div id="chat-box"></div>
+    </div>
+    <input type="text" id="chat-input" placeholder="Type a message..." maxlength="200" aria-label="Chat message input">
+    <button id="send-button" onclick="sendMessage()" aria-label="Send message">Send</button>
+
+    <!-- Emoji Reactions -->
+    <h2>🔥 React to the Event!</h2>
+    <div id="reactions">
+        <button class="reaction-button" onclick="sendReaction('👏')" aria-label="Clap reaction">
+            👏 <span id="clap-count">0</span>
+        </button>
+        <button class="reaction-button" onclick="sendReaction('🔥')" aria-label="Fire reaction">
+            🔥 <span id="fire-count">0</span>
+        </button>
+        <button class="reaction-button" onclick="sendReaction('😍')" aria-label="Love reaction">
+            😍 <span id="love-count">0</span>
+        </button>
+    </div>
+
+    <script>
+        // Secure Firebase Configuration (Use environment variables in production)
+        const firebaseConfig = {
+            apiKey: "AIzaSyDcKbCUbGZIPgavE9NRSsKCVaySa9NE6Eo",
+            authDomain: "glitchcon-v2.firebaseapp.com",
+            databaseURL: "https://glitchcon-v2-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "glitchcon-v2",
+            storageBucket: "glitchcon-v2.appspot.com",
+            messagingSenderId: "783460735576",
+            appId: "1:783460735576:web:5aa92817f466d5c037882d"
+        };
+
+        // Declare global variables
+        let db;
+        const reactionCooldown = {};
+        const MAX_MESSAGE_LENGTH = 200;
+
+        // Ensure Firebase is fully loaded before initializing
+        document.addEventListener('DOMContentLoaded', function() {
+            try {
+                // Initialize Firebase
+                firebase.initializeApp(firebaseConfig);
+                
+                // Get database reference
+                db = firebase.database();
+
+                // Setup chat listener
+                setupChatListener();
+
+                // Setup reactions listener
+                setupReactionsListener();
+            } catch (error) {
+                console.error("Firebase initialization error:", error);
+                alert("Unable to connect to live event. Please reload the page.");
+            }
+        });
+
+        // Declare sendMessage as a global function
+        function sendMessage() {
+            const chatInput = document.getElementById("chat-input");
+            const message = chatInput.value.trim();
+            
+            if (message === "" || message.length > MAX_MESSAGE_LENGTH) {
+                chatInput.style.borderColor = "red";
+                setTimeout(() => {
+                    chatInput.style.borderColor = "";
+                }, 1000);
+                return;
+            }
+
+            try {
+                db.ref("chat/").push({
+                    user: "User" + Math.floor(Math.random() * 100),
+                    message: escapeHTML(message),
+                    timestamp: Date.now()
+                });
+                chatInput.value = "";
+            } catch (error) {
+                console.error("Message send error:", error);
+                alert("Could not send message. Please try again.");
+            }
+        }
+
+        // Declare sendReaction as a global function
+        function sendReaction(emoji) {
+            const now = Date.now();
+            
+            // Prevent rapid successive reactions
+            if (reactionCooldown[emoji] && now - reactionCooldown[emoji] < 1000) {
+                return;
+            }
+
+            const emojiRef = db.ref("reactions/" + emoji);
+            emojiRef.transaction((currentValue) => {
+                reactionCooldown[emoji] = now;
+                return (currentValue || 0) + 1;
+            });
+        }
+
+        // Setup chat listener
+        function setupChatListener() {
+            const chatBox = document.getElementById("chat-box");
+            
+            db.ref("chat/").on("child_added", (snapshot) => {
+                const msg = snapshot.val();
+                const messageElement = document.createElement('p');
+                messageElement.innerHTML = `<strong>${msg.user}:</strong> ${msg.message}`;
+                chatBox.appendChild(messageElement);
+                
+                // Auto-scroll to the bottom of chat
+                chatBox.scrollTop = chatBox.scrollHeight;
+            }, (error) => {
+                console.error("Chat message error:", error);
+            });
+        }
+
+        // Setup reactions listener
+        function setupReactionsListener() {
+            db.ref("reactions/").on("value", (snapshot) => {
+                const reactions = snapshot.val() || {};
+                document.getElementById("clap-count").innerText = reactions["👏"] || 0;
+                document.getElementById("fire-count").innerText = reactions["🔥"] || 0;
+                document.getElementById("love-count").innerText = reactions["😍"] || 0;
+            }, (error) => {
+                console.error("Reactions update error:", error);
+            });
+        }
+
+        // Helper function to prevent XSS
+        function escapeHTML(str) {
+            return str.replace(/[&<>'"]/g, 
+                tag => ({
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    "'": '&#39;',
+                    '"': '&quot;'
+                }[tag] || tag));
+        }
+    </script>
+</body>
+</html>
